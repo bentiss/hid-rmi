@@ -69,6 +69,7 @@ struct rmi_function {
  * @flags: flags for the current device (started, reading, etc...)
  *
  * @f11: placeholder of internal RMI function F11 description
+ * @f30: placeholder of internal RMI function F30 description
  *
  * @max_fingers: maximum finger count reported by the device
  * @max_x: maximum x value reported by the device
@@ -91,6 +92,7 @@ struct rmi_data {
 	unsigned long flags;
 
 	struct rmi_function f11;
+	struct rmi_function f30;
 
 	unsigned int max_fingers;
 	unsigned int max_x;
@@ -300,6 +302,27 @@ static int rmi_f11_input_event(struct hid_device *hdev, u8 *data, int size)
 	return hdata->f11.report_size;
 }
 
+static int rmi_f30_input_event(struct hid_device *hdev, u8 *data, int size)
+{
+	struct rmi_data *hdata = hid_get_drvdata(hdev);
+	int i;
+	int button = 0;
+	bool value;
+	pr_err("%s data: %*ph mask:%02lx %s:%d\n", __func__, size, data, hdata->button_mask, __FILE__, __LINE__);
+
+	for (i = 0; i < hdata->gpio_led_count; i++) {
+		if (test_bit(i, &hdata->button_mask)){
+			value = (data[i / 8] >> (i & 0x07)) & 0x01;
+			if (test_bit(i, &hdata->button_state_mask))
+				value = !value;
+			pr_err("%s button%d: %d %s:%d\n", __func__, button, value, __FILE__, __LINE__);
+			input_event(hdata->input, EV_KEY,
+					BTN_LEFT + button++, value);
+		}
+	}
+	return hdata->f30.report_size;
+}
+
 static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 {
 	struct rmi_data *hdata = hid_get_drvdata(hdev);
@@ -310,6 +333,7 @@ static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 		return 0;
 
 	irq_mask |= hdata->f11.irq_mask;
+	irq_mask |= hdata->f30.irq_mask;
 
 	if (data[1] & ~irq_mask) {
 		hid_err(hdev, "unknown intr source:%02lx %s:%d\n",
@@ -319,6 +343,9 @@ static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 
 	if (data[1] & hdata->f11.irq_mask)
 		index += rmi_f11_input_event(hdev, &data[index], size - index);
+
+	if (data[1] & hdata->f30.irq_mask)
+		index += rmi_f30_input_event(hdev, &data[index], size - index);
 
 	return 1;
 }
@@ -396,6 +423,9 @@ static void rmi_register_function(struct rmi_data *data,
 	switch (pdt_entry->function_number) {
 	case 0x11:
 		f = &data->f11;
+		break;
+	case 0x30:
+		f = &data->f30;
 		break;
 	}
 
@@ -508,6 +538,74 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	return 0;
 }
 
+static int rmi_populate_f30(struct hid_device *hdev)
+{
+	struct rmi_data *data = hid_get_drvdata(hdev);
+	u8 buf[20];
+	int ret;
+	bool has_gpio, has_led;
+	unsigned bytes_per_ctrl;
+	u8 ctrl2_addr;
+	int ctrl2_3_length;
+	int i;
+
+	/* function F30 is for physical buttons */
+	if (!data->f30.query_base_addr) {
+		hid_err(hdev, "No GPIO/LEDs found, giving up.\n");
+		return -ENODEV;
+	}
+
+	ret = rmi_read_block(hdev, data->f30.query_base_addr, buf, 2);
+	if (ret != 2) {
+		hid_err(hdev, "can not get F30 query registers: %d.\n",
+			ret);
+		return ret;
+	}
+
+	has_gpio = !!(buf[0] & 0x08);
+	has_led = !!(buf[0] & 0x04);
+	data->gpio_led_count = buf[1] & 0x1f;
+
+	pr_err("%s %2ph %s:%d\n", __func__, buf, __FILE__, __LINE__);
+
+	/* retrieve ctrl 2 & 3 registers */
+	bytes_per_ctrl = (data->gpio_led_count + 7) / 8;
+	ctrl2_addr = 1 + bytes_per_ctrl;
+	ctrl2_3_length = 2 * bytes_per_ctrl;
+
+	data->f30.report_size = bytes_per_ctrl;
+
+	ret = rmi_read_block(hdev, data->f30.control_base_addr + ctrl2_addr,
+				buf, ctrl2_3_length);
+	if (ret != ctrl2_3_length) {
+		hid_err(hdev, "can not read ctrl 2&3 block of size %d: %d.\n",
+			ctrl2_3_length, ret);
+		return ret;
+	}
+
+	for (i = 0; i < data->gpio_led_count; i++) {
+		int byte_position = i >> 3;
+		int bit_position = i & 0x07;
+		u8 dir_byte = buf[byte_position];
+		u8 data_byte = buf[byte_position + bytes_per_ctrl];
+		bool dir = (dir_byte >> bit_position) & 0x01;
+		bool dat = (data_byte >> bit_position) & 0x01;
+
+		pr_err("%s gpio %d -> %d %d %s:%d\n", __func__, i, dir, dat, __FILE__, __LINE__);
+
+		if (dir == 0) {
+			/* input mode */
+			set_bit(i, &data->button_mask);
+
+			if (dat)
+				set_bit(i, &data->button_state_mask);
+		}
+
+	}
+
+	return 0;
+}
+
 static int rmi_populate(struct hid_device *hdev)
 {
 	int ret;
@@ -523,6 +621,10 @@ static int rmi_populate(struct hid_device *hdev)
 		hid_err(hdev, "Error while initializing F11 (%d).\n", ret);
 		return ret;
 	}
+
+	ret = rmi_populate_f30(hdev);
+	if (ret)
+		hid_warn(hdev, "Error while initializing F30 (%d).\n", ret);
 
 	return 0;
 }
