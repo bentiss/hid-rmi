@@ -235,7 +235,7 @@ static int rmi_read_block(struct hid_device *hdev, u16 addr, void *buf,
 		}
 
 		if (ret >= 0) {
-			ret = bytes_read;
+			ret = 0;
 			break;
 		}
 	}
@@ -464,7 +464,7 @@ static int rmi_scan_pdt(struct hid_device *hdev)
 		page_has_function = false;
 		for (i = pdt_start; i >= pdt_end; i -= sizeof(entry)) {
 			retval = rmi_read_block(hdev, i, &entry, sizeof(entry));
-			if (retval != sizeof(entry)) {
+			if (retval) {
 				hid_err(hdev,
 					"Read of PDT entry at %#06x failed.\n",
 					i);
@@ -509,7 +509,7 @@ static int rmi_populate_f11(struct hid_device *hdev)
 
 	/* query 1 to get the max number of fingers */
 	ret = rmi_read_block(hdev, data->f11.query_base_addr + 1, buf, 1);
-	if (ret != 1) {
+	if (ret) {
 		hid_err(hdev, "can not get NumberOfFingers: %d.\n", ret);
 		return ret;
 	}
@@ -527,7 +527,7 @@ static int rmi_populate_f11(struct hid_device *hdev)
 
 	/* retrieve the ctrl registers */
 	ret = rmi_read_block(hdev, data->f11.control_base_addr, buf, 20);
-	if (ret != 20) {
+	if (ret) {
 		hid_err(hdev, "can not read ctrl block of size 20: %d.\n", ret);
 		return ret;
 	}
@@ -556,7 +556,7 @@ static int rmi_populate_f30(struct hid_device *hdev)
 	}
 
 	ret = rmi_read_block(hdev, data->f30.query_base_addr, buf, 2);
-	if (ret != 2) {
+	if (ret) {
 		hid_err(hdev, "can not get F30 query registers: %d.\n",
 			ret);
 		return ret;
@@ -577,7 +577,7 @@ static int rmi_populate_f30(struct hid_device *hdev)
 
 	ret = rmi_read_block(hdev, data->f30.control_base_addr + ctrl2_addr,
 				buf, ctrl2_3_length);
-	if (ret != ctrl2_3_length) {
+	if (ret) {
 		hid_err(hdev, "can not read ctrl 2&3 block of size %d: %d.\n",
 			ctrl2_3_length, ret);
 		return ret;
