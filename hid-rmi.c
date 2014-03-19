@@ -246,6 +246,11 @@ exit:
 	return ret;
 }
 
+static inline int rmi_read(struct hid_device *hdev, u16 addr, void *buf)
+{
+	return rmi_read_block(hdev, addr, buf, 1);
+}
+
 static void rmi_f11_process_touch(struct rmi_data *hdata, int slot,
 		u8 finger_state, u8 *touch_data)
 {
@@ -508,7 +513,7 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	/* we consider that there is allways one sensor, so we skip query 0 */
 
 	/* query 1 to get the max number of fingers */
-	ret = rmi_read_block(hdev, data->f11.query_base_addr + 1, buf, 1);
+	ret = rmi_read(hdev, data->f11.query_base_addr + 1, buf);
 	if (ret) {
 		hid_err(hdev, "can not get NumberOfFingers: %d.\n", ret);
 		return ret;
