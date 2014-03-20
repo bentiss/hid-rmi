@@ -348,11 +348,9 @@ static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 	irq_mask |= hdata->f11.irq_mask;
 	irq_mask |= hdata->f30.irq_mask;
 
-	if (data[1] & ~irq_mask) {
-		hid_err(hdev, "unknown intr source:%02lx %s:%d\n",
+	if (data[1] & ~irq_mask)
+		hid_warn(hdev, "unknown intr source:%02lx %s:%d\n",
 			data[1] & ~irq_mask, __FILE__, __LINE__);
-		return 0;
-	}
 
 	if (hdata->f11.interrupt_base < hdata->f30.interrupt_base) {
 		index += rmi_f11_input_event(hdev, data[1], &data[index],
