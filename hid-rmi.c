@@ -317,7 +317,7 @@ static int rmi_f30_input_event(struct hid_device *hdev, u8 *data, int size)
 
 	for (i = 0; i < hdata->gpio_led_count; i++) {
 		if (test_bit(i, &hdata->button_mask)){
-			value = (data[i / 8] >> (i & 0x07)) & 0x01;
+			value = (data[i / 8] >> (i & 0x07)) & BIT(0);
 			if (test_bit(i, &hdata->button_state_mask))
 				value = !value;
 			pr_err("%s button%d: %d %s:%d\n", __func__, button, value, __FILE__, __LINE__);
@@ -525,7 +525,7 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	data->f11.report_size = data->max_fingers * 5 +
 				DIV_ROUND_UP(data->max_fingers, 4);
 
-	if (!(buf[0] & 0x10)) {
+	if (!(buf[0] & BIT(4))) {
 		hid_err(hdev, "No absolute events, giving up.\n");
 		return -ENODEV;
 	}
@@ -567,8 +567,8 @@ static int rmi_populate_f30(struct hid_device *hdev)
 		return ret;
 	}
 
-	has_gpio = !!(buf[0] & 0x08);
-	has_led = !!(buf[0] & 0x04);
+	has_gpio = !!(buf[0] & BIT(3));
+	has_led = !!(buf[0] & BIT(2));
 	data->gpio_led_count = buf[1] & 0x1f;
 
 	pr_err("%s %2ph %s:%d\n", __func__, buf, __FILE__, __LINE__);
@@ -593,8 +593,8 @@ static int rmi_populate_f30(struct hid_device *hdev)
 		int bit_position = i & 0x07;
 		u8 dir_byte = buf[byte_position];
 		u8 data_byte = buf[byte_position + bytes_per_ctrl];
-		bool dir = (dir_byte >> bit_position) & 0x01;
-		bool dat = (data_byte >> bit_position) & 0x01;
+		bool dir = (dir_byte >> bit_position) & BIT(0);
+		bool dat = (data_byte >> bit_position) & BIT(0);
 
 		pr_err("%s gpio %d -> %d %d %s:%d\n", __func__, i, dir, dat, __FILE__, __LINE__);
 
