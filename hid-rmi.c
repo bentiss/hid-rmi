@@ -769,6 +769,8 @@ static int rmi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 
 	hid_set_drvdata(hdev, data);
 
+	hdev->quirks |= HID_QUIRK_NO_INIT_REPORTS;
+
 	ret = hid_parse(hdev);
 	if (ret) {
 		hid_err(hdev, "parse failed\n");
