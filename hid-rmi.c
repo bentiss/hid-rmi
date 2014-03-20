@@ -629,7 +629,10 @@ static int rmi_populate_f30(struct hid_device *hdev)
 
 	/* retrieve ctrl 2 & 3 registers */
 	bytes_per_ctrl = (data->gpio_led_count + 7) / 8;
-	ctrl2_addr = 1 + bytes_per_ctrl;
+	/* Ctrl0 is present only if both has_gpio and has_led are set*/
+	ctrl2_addr = (has_gpio && has_led) ? bytes_per_ctrl : 0;
+	/* Ctrl1 is always be present */
+	ctrl2_addr += bytes_per_ctrl;
 	ctrl2_3_length = 2 * bytes_per_ctrl;
 
 	data->f30.report_size = bytes_per_ctrl;
