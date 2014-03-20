@@ -283,13 +283,17 @@ static void rmi_f11_process_touch(struct rmi_data *hdata, int slot,
 	}
 }
 
-static int rmi_f11_input_event(struct hid_device *hdev, u8 *data, int size)
+static int rmi_f11_input_event(struct hid_device *hdev, u8 irq, u8 *data,
+		int size)
 {
 	struct rmi_data *hdata = hid_get_drvdata(hdev);
 	int offset;
 	int i;
 
 	if (size < hdata->f11.report_size)
+		return 0;
+
+	if (!(irq & hdata->f11.irq_mask))
 		return 0;
 
 	offset = (hdata->max_fingers >> 2) + 1;
@@ -307,12 +311,16 @@ static int rmi_f11_input_event(struct hid_device *hdev, u8 *data, int size)
 	return hdata->f11.report_size;
 }
 
-static int rmi_f30_input_event(struct hid_device *hdev, u8 *data, int size)
+static int rmi_f30_input_event(struct hid_device *hdev, u8 irq, u8 *data,
+		int size)
 {
 	struct rmi_data *hdata = hid_get_drvdata(hdev);
 	int i;
 	int button = 0;
 	bool value;
+
+	if (!(irq & hdata->f30.irq_mask))
+		return 0;
 	pr_err("%s data: %*ph mask:%02lx %s:%d\n", __func__, size, data, hdata->button_mask, __FILE__, __LINE__);
 
 	for (i = 0; i < hdata->gpio_led_count; i++) {
@@ -346,11 +354,17 @@ static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 		return 0;
 	}
 
-	if (data[1] & hdata->f11.irq_mask)
-		index += rmi_f11_input_event(hdev, &data[index], size - index);
-
-	if (data[1] & hdata->f30.irq_mask)
-		index += rmi_f30_input_event(hdev, &data[index], size - index);
+	if (hdata->f11.interrupt_base < hdata->f30.interrupt_base) {
+		index += rmi_f11_input_event(hdev, data[1], &data[index],
+				size - index);
+		index += rmi_f30_input_event(hdev, data[1], &data[index],
+				size - index);
+	} else {
+		index += rmi_f30_input_event(hdev, data[1], &data[index],
+				size - index);
+		index += rmi_f11_input_event(hdev, data[1], &data[index],
+				size - index);
+	}
 
 	return 1;
 }
