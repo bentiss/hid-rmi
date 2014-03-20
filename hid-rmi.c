@@ -21,11 +21,11 @@
 #include <linux/sched.h>
 #include "hid-ids.h"
 
-#define RMI_WRITE_REPORT_ID		0x9 /* Output Report */
-#define RMI_READ_ADDR_REPORT_ID		0xa /* Output Report */
-#define RMI_READ_DATA_REPORT_ID		0xb /* Input Report */
-#define RMI_ATTN_REPORT_ID		0xc /* Input Report */
-#define RMI_SET_RMI_MODE_REPORT_ID	0xf /* Feature Report */
+#define RMI_WRITE_REPORT_ID		0x09 /* Output Report */
+#define RMI_READ_ADDR_REPORT_ID		0x0a /* Output Report */
+#define RMI_READ_DATA_REPORT_ID		0x0b /* Input Report */
+#define RMI_ATTN_REPORT_ID		0x0c /* Input Report */
+#define RMI_SET_RMI_MODE_REPORT_ID	0x0f /* Feature Report */
 
 /* flags */
 #define RMI_READ_REQUEST_PENDING	BIT(0)
@@ -321,8 +321,8 @@ static int rmi_f30_input_event(struct hid_device *hdev, u8 *data, int size)
 			if (test_bit(i, &hdata->button_state_mask))
 				value = !value;
 			pr_err("%s button%d: %d %s:%d\n", __func__, button, value, __FILE__, __LINE__);
-			input_event(hdata->input, EV_KEY,
-					BTN_LEFT + button++, value);
+			input_event(hdata->input, EV_KEY, BTN_LEFT + button++,
+					value);
 		}
 	}
 	return hdata->f30.report_size;
@@ -396,7 +396,7 @@ static int rmi_post_resume(struct hid_device *hdev)
 }
 
 #define RMI4_MAX_PAGE 0xff
-#define RMI4_PAGE_SIZE 0x100
+#define RMI4_PAGE_SIZE 0x0100
 
 #define PDT_START_SCAN_LOCATION 0x00e9
 #define PDT_END_SCAN_LOCATION	0x0005
@@ -562,8 +562,7 @@ static int rmi_populate_f30(struct hid_device *hdev)
 
 	ret = rmi_read_block(hdev, data->f30.query_base_addr, buf, 2);
 	if (ret) {
-		hid_err(hdev, "can not get F30 query registers: %d.\n",
-			ret);
+		hid_err(hdev, "can not get F30 query registers: %d.\n", ret);
 		return ret;
 	}
 
