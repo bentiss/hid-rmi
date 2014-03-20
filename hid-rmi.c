@@ -652,10 +652,10 @@ static int rmi_populate_f30(struct hid_device *hdev)
 
 		if (dir == 0) {
 			/* input mode */
-			set_bit(i, &data->button_mask);
-
 			if (dat) {
+				/* actual buttons have pull up resistor */
 				data->button_count++;
+				set_bit(i, &data->button_mask);
 				set_bit(i, &data->button_state_mask);
 			}
 		}
