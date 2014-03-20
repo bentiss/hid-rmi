@@ -97,6 +97,8 @@ struct rmi_data {
 	unsigned int max_fingers;
 	unsigned int max_x;
 	unsigned int max_y;
+	unsigned int x_size_mm;
+	unsigned int y_size_mm;
 
 	unsigned int gpio_led_count;
 	unsigned long button_mask;
@@ -516,13 +518,22 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	struct rmi_data *data = hid_get_drvdata(hdev);
 	u8 buf[20];
 	int ret;
+	bool has_query12;
+	bool has_physical_props;
+	unsigned x_size, y_size;
 
 	if (!data->f11.query_base_addr) {
 		hid_err(hdev, "No 2D sensor found, giving up.\n");
 		return -ENODEV;
 	}
 
-	/* we consider that there is allways one sensor, so we skip query 0 */
+	/* query 0 contains some useful information */
+	ret = rmi_read(hdev, data->f11.query_base_addr, buf);
+	if (ret) {
+		hid_err(hdev, "can not get query 0: %d.\n", ret);
+		return ret;
+	}
+	has_query12 = !!(buf[0] & BIT(5));
 
 	/* query 1 to get the max number of fingers */
 	ret = rmi_read(hdev, data->f11.query_base_addr + 1, buf);
@@ -540,6 +551,38 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	if (!(buf[0] & BIT(4))) {
 		hid_err(hdev, "No absolute events, giving up.\n");
 		return -ENODEV;
+	}
+
+	/*
+	 * query 12 to know if the physical properties are reported
+	 * (query 12 is at offset 10 for HID devices)
+	 */
+	if (has_query12) {
+		ret = rmi_read(hdev, data->f11.query_base_addr + 10, buf);
+		if (ret) {
+			hid_err(hdev, "can not get query 12: %d.\n", ret);
+			return ret;
+		}
+		has_physical_props = !!(buf[0] & BIT(5));
+
+		if (has_physical_props) {
+			ret = rmi_read_block(hdev,
+					data->f11.query_base_addr + 11, buf, 4);
+			if (ret) {
+				hid_err(hdev, "can not read query 15-18: %d.\n",
+					ret);
+				return ret;
+			}
+
+			x_size = buf[0] | (buf[1] << 8);
+			y_size = buf[2] | (buf[3] << 8);
+
+			data->x_size_mm = DIV_ROUND_CLOSEST(x_size, 10);
+			data->y_size_mm = DIV_ROUND_CLOSEST(y_size, 10);
+
+			hid_info(hdev, "%s: size in mm: %d x %d\n",
+				 __func__, data->x_size_mm, data->y_size_mm);
+		}
 	}
 
 	/* retrieve the ctrl registers */
@@ -650,6 +693,7 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 	struct rmi_data *data = hid_get_drvdata(hdev);
 	struct input_dev *input = hi->input;
 	int ret;
+	int res_x, res_y;
 
 	data->input = input;
 
@@ -680,6 +724,15 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 	__set_bit(EV_ABS, input->evbit);
 	input_set_abs_params(input, ABS_MT_POSITION_X, 1, data->max_x, 0, 0);
 	input_set_abs_params(input, ABS_MT_POSITION_Y, 1, data->max_y, 0, 0);
+
+	if (data->x_size_mm && data->x_size_mm) {
+		res_x = (data->max_x - 1) / data->x_size_mm;
+		res_y = (data->max_y - 1) / data->x_size_mm;
+
+		input_abs_set_res(input, ABS_MT_POSITION_X, res_x);
+		input_abs_set_res(input, ABS_MT_POSITION_Y, res_y);
+	}
+
 	input_set_abs_params(input, ABS_MT_ORIENTATION, 0, 1, 0, 0);
 	input_set_abs_params(input, ABS_MT_PRESSURE, 0, 0xff, 0, 0);
 	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 0x0f, 0, 0);
