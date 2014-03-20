@@ -101,6 +101,7 @@ struct rmi_data {
 	unsigned int y_size_mm;
 
 	unsigned int gpio_led_count;
+	unsigned int button_count;
 	unsigned long button_mask;
 	unsigned long button_state_mask;
 
@@ -323,14 +324,12 @@ static int rmi_f30_input_event(struct hid_device *hdev, u8 irq, u8 *data,
 
 	if (!(irq & hdata->f30.irq_mask))
 		return 0;
-	pr_err("%s data: %*ph mask:%02lx %s:%d\n", __func__, size, data, hdata->button_mask, __FILE__, __LINE__);
 
 	for (i = 0; i < hdata->gpio_led_count; i++) {
 		if (test_bit(i, &hdata->button_mask)){
 			value = (data[i / 8] >> (i & 0x07)) & BIT(0);
 			if (test_bit(i, &hdata->button_state_mask))
 				value = !value;
-			pr_err("%s button%d: %d %s:%d\n", __func__, button, value, __FILE__, __LINE__);
 			input_event(hdata->input, EV_KEY, BTN_LEFT + button++,
 					value);
 		}
@@ -625,8 +624,6 @@ static int rmi_populate_f30(struct hid_device *hdev)
 	has_led = !!(buf[0] & BIT(2));
 	data->gpio_led_count = buf[1] & 0x1f;
 
-	pr_err("%s %2ph %s:%d\n", __func__, buf, __FILE__, __LINE__);
-
 	/* retrieve ctrl 2 & 3 registers */
 	bytes_per_ctrl = (data->gpio_led_count + 7) / 8;
 	/* Ctrl0 is present only if both has_gpio and has_led are set*/
@@ -653,14 +650,14 @@ static int rmi_populate_f30(struct hid_device *hdev)
 		bool dir = (dir_byte >> bit_position) & BIT(0);
 		bool dat = (data_byte >> bit_position) & BIT(0);
 
-		pr_err("%s gpio %d -> %d %d %s:%d\n", __func__, i, dir, dat, __FILE__, __LINE__);
-
 		if (dir == 0) {
 			/* input mode */
 			set_bit(i, &data->button_mask);
 
-			if (dat)
+			if (dat) {
+				data->button_count++;
 				set_bit(i, &data->button_state_mask);
+			}
 		}
 
 	}
@@ -696,7 +693,7 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 	struct rmi_data *data = hid_get_drvdata(hdev);
 	struct input_dev *input = hi->input;
 	int ret;
-	int res_x, res_y;
+	int res_x, res_y, i;
 
 	data->input = input;
 
@@ -742,6 +739,12 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 	input_set_abs_params(input, ABS_MT_TOUCH_MINOR, 0, 0x0f, 0, 0);
 
 	input_mt_init_slots(input, data->max_fingers, INPUT_MT_POINTER);
+
+	if (data->button_count) {
+		__set_bit(EV_KEY, input->evbit);
+		for (i = 0; i < data->button_count; i++)
+			__set_bit(BTN_LEFT + i, input->keybit);
+	}
 
 	set_bit(RMI_STARTED, &data->flags);
 
