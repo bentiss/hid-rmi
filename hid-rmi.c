@@ -840,11 +840,7 @@ static const struct hid_device_id rmi_id[] = {
 MODULE_DEVICE_TABLE(hid, rmi_id);
 
 static struct hid_driver rmi_driver = {
-	.name = "rmi_hid",
-	.driver = {
-		.owner	= THIS_MODULE,
-		.name	= "rmi_hid",
-	},
+	.name = "hid-rmi",
 	.id_table		= rmi_id,
 	.probe			= rmi_probe,
 	.remove			= rmi_remove,
