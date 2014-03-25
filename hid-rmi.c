@@ -843,6 +843,11 @@ static int rmi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		return ret;
 	}
 
+	if (!test_bit(RMI_STARTED, &data->flags)) {
+		hid_hw_stop(hdev);
+		return -EIO;
+	}
+
 	return 0;
 }
 
