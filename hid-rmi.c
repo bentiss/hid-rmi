@@ -21,6 +21,7 @@
 #include <linux/sched.h>
 #include "hid-ids.h"
 
+#define RMI_MOUSE_REPORT_ID		0x01 /* Mouse emulation Report */
 #define RMI_WRITE_REPORT_ID		0x09 /* Output Report */
 #define RMI_READ_ADDR_REPORT_ID		0x0a /* Output Report */
 #define RMI_READ_DATA_REPORT_ID		0x0b /* Input Report */
@@ -81,6 +82,9 @@ struct rmi_function {
  * @button_state_mask: pull state of the buttons
  *
  * @input: pointer to the kernel input device
+ *
+ * @reset_work: worker which will be called in case of a mouse report
+ * @hdev: pointer to the struct hid_device
  */
 struct rmi_data {
 	struct mutex page_mutex;
@@ -111,6 +115,9 @@ struct rmi_data {
 	unsigned long button_state_mask;
 
 	struct input_dev *input;
+
+	struct work_struct reset_work;
+	struct hid_device *hdev;
 };
 
 #define RMI_PAGE(addr) (((addr) >> 8) & 0xff)
@@ -291,6 +298,21 @@ static void rmi_f11_process_touch(struct rmi_data *hdata, int slot,
 	}
 }
 
+static void rmi_reset_work(struct work_struct *work)
+{
+	struct rmi_data *hdata = container_of(work, struct rmi_data,
+						reset_work);
+
+	/* switch the device to RMI if we receive a generic mouse report */
+	rmi_set_mode(hdata->hdev, RMI_MODE_ATTN_REPORTS);
+}
+
+static inline int rmi_schedule_reset(struct hid_device *hdev)
+{
+	struct rmi_data *hdata = hid_get_drvdata(hdev);
+	return schedule_work(&hdata->reset_work);
+}
+
 static int rmi_f11_input_event(struct hid_device *hdev, u8 irq, u8 *data,
 		int size)
 {
@@ -398,6 +420,9 @@ static int rmi_raw_event(struct hid_device *hdev,
 		return rmi_read_data_event(hdev, data, size);
 	case RMI_ATTN_REPORT_ID:
 		return rmi_input_event(hdev, data, size);
+	case RMI_MOUSE_REPORT_ID:
+		rmi_schedule_reset(hdev);
+		break;
 	}
 
 	return 0;
@@ -462,7 +487,6 @@ static void rmi_register_function(struct rmi_data *data,
 		f->interrupt_count = pdt_entry->interrupt_source_count;
 		f->irq_mask = rmi_gen_mask(f->interrupt_base,
 						f->interrupt_count);
-
 	}
 }
 
@@ -758,9 +782,7 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 
 exit:
 	hid_device_io_stop(hdev);
-	/* FIXME: do not keep the device opened
-	 * hid_hw_close(hdev);
-	 */
+	hid_hw_close(hdev);
 }
 
 static int rmi_input_mapping(struct hid_device *hdev,
@@ -780,6 +802,9 @@ static int rmi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	data = devm_kzalloc(&hdev->dev, sizeof(struct rmi_data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
+
+	INIT_WORK(&data->reset_work, rmi_reset_work);
+	data->hdev = hdev;
 
 	hid_set_drvdata(hdev, data);
 
@@ -827,8 +852,6 @@ static void rmi_remove(struct hid_device *hdev)
 
 	clear_bit(RMI_STARTED, &hdata->flags);
 
-	/* FIXME: do not keep the device opened */
-	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
 }
 
