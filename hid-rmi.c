@@ -749,6 +749,9 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 		__set_bit(EV_KEY, input->evbit);
 		for (i = 0; i < data->button_count; i++)
 			__set_bit(BTN_LEFT + i, input->keybit);
+
+		if (data->button_count == 1)
+			__set_bit(INPUT_PROP_BUTTONPAD, input->propbit);
 	}
 
 	set_bit(RMI_STARTED, &data->flags);
