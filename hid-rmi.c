@@ -75,6 +75,11 @@ struct rmi_function {
  * @max_x: maximum x value reported by the device
  * @max_y: maximum y value reported by the device
  *
+ * @gpio_led_count: count of GPIOs + LEDs reported by F30
+ * @button_count: actual physical buttons count
+ * @button_mask: button mask used to decode GPIO ATTN reports
+ * @button_state_mask: pull state of the buttons
+ *
  * @input: pointer to the kernel input device
  */
 struct rmi_data {
