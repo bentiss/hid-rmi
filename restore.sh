@@ -1,7 +1,7 @@
 #!/bin/bash
 MODULE=$1
 
-UDEV_RULE=/etc/udev/rules.d/41-${MODULE}.rules
+UDEV_RULE=/etc/udev/rules.d/99-${MODULE}.rules
 
 if [[ `id -u` != 0 ]]
 then

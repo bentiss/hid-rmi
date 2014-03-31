@@ -2,7 +2,7 @@
 MODULE=$1
 BLACKLIST_MODULE=$2
 
-UDEV_RULE=/etc/udev/rules.d/41-${MODULE}.rules
+UDEV_RULE=/etc/udev/rules.d/99-${MODULE}.rules
 LOADING_SCRIPT=load_hid_specific_module.sh
 BASH_LOADING_SCRIPT=/etc/udev/${LOADING_SCRIPT}
 
@@ -12,11 +12,14 @@ then
   exit 1
 fi
 
-grep MODULE_ALIAS hid_mt_compat.mod.c | \
-	sed 's/MODULE_ALIAS("hid:b.*v0000\(.*\)p0000\(.*\)");/DRIVER=="${BLACKLIST_MODULE}", ENV{MODALIAS}=="usb:v\1p\2d*", RUN+="\/bin\/sh \/etc\/udev\/${LOADING_SCRIPT} ${BLACKLIST_MODULE} ${MODULE} %k"/' | \
+
+echo 'ACTION!="add|change", GOTO="hid_rmi_end"' > ${UDEV_RULE}
+grep MODULE_ALIAS ${MODULE}.mod.c | \
+	sed "s/MODULE_ALIAS(\"\(hid:b.*g.*v.*p.*\)\");/DRIVER==\"${BLACKLIST_MODULE}\", ENV{MODALIAS}==\"\1\", RUN+=\"\/bin\/sh \/etc\/udev\/${LOADING_SCRIPT} ${BLACKLIST_MODULE} ${MODULE} %k\"/" | \
 	grep -v MODULE_ALIAS | \
 	sort \
-		> ${UDEV_RULE}
+		>> ${UDEV_RULE}
+echo 'LABEL="hid_rmi_end"' >> ${UDEV_RULE}
 
 cat > ${BASH_LOADING_SCRIPT} <<EOF
 #!/bin/bash

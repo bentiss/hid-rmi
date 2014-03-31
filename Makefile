@@ -11,6 +11,7 @@ default:
 
 install: $(MODULE_NAME).ko $(MODULE_NAME).mod.c
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules_install
+	/bin/bash install.sh ${MODULE_NAME} hid-generic
 
 uninstall:
 	/bin/bash restore.sh $(MODULE_NAME)
