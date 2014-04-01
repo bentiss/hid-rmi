@@ -21,6 +21,8 @@
 #include <linux/sched.h>
 #include "hid-ids.h"
 
+#include "compat.h"
+
 #define RMI_MOUSE_REPORT_ID		0x01 /* Mouse emulation Report */
 #define RMI_WRITE_REPORT_ID		0x09 /* Output Report */
 #define RMI_READ_ADDR_REPORT_ID		0x0a /* Output Report */
