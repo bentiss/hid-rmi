@@ -18,6 +18,7 @@
 #include <linux/pm.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
+#include <linux/bitops.h>
 #include <linux/sched.h>
 #include "hid-ids.h"
 
