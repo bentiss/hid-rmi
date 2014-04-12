@@ -15,6 +15,10 @@
 	.bus = BUS_I2C, .vendor = (ven), .product = (prod)
 #endif
 
+#ifndef GENMASK
+#define GENMASK(h, l)           (((U32_C(1) << ((h) - (l) + 1)) - 1) << (l))
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0)
 
 static inline int hid_hw_raw_request(struct hid_device *hdev,
