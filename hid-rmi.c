@@ -280,9 +280,9 @@ static void rmi_f11_process_touch(struct rmi_data *hdata, int slot,
 	input_mt_report_slot_state(hdata->input, MT_TOOL_FINGER,
 			finger_state == 0x01);
 	if (finger_state == 0x01) {
-		x = (touch_data[0] << 4) | (touch_data[2] & 0x07);
+		x = (touch_data[0] << 4) | (touch_data[2] & 0x0F);
 		y = (touch_data[1] << 4) | (touch_data[2] >> 4);
-		wx = touch_data[3] & 0x07;
+		wx = touch_data[3] & 0x0F;
 		wy = touch_data[3] >> 4;
 		wide = (wx > wy);
 		major = max(wx, wy);
@@ -380,7 +380,7 @@ static int rmi_input_event(struct hid_device *hdev, u8 *data, int size)
 	irq_mask |= hdata->f30.irq_mask;
 
 	if (data[1] & ~irq_mask)
-		hid_warn(hdev, "unknown intr source:%02lx %s:%d\n",
+		hid_dbg(hdev, "unknown intr source:%02lx %s:%d\n",
 			data[1] & ~irq_mask, __FILE__, __LINE__);
 
 	if (hdata->f11.interrupt_base < hdata->f30.interrupt_base) {
@@ -403,7 +403,7 @@ static int rmi_read_data_event(struct hid_device *hdev, u8 *data, int size)
 	struct rmi_data *hdata = hid_get_drvdata(hdev);
 
 	if (!test_bit(RMI_READ_REQUEST_PENDING, &hdata->flags)) {
-		hid_err(hdev, "no read request pending\n");
+		hid_dbg(hdev, "no read request pending\n");
 		return 0;
 	}
 
@@ -431,6 +431,7 @@ static int rmi_raw_event(struct hid_device *hdev,
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int rmi_post_reset(struct hid_device *hdev)
 {
 	return rmi_set_mode(hdev, RMI_MODE_ATTN_REPORTS);
@@ -440,6 +441,7 @@ static int rmi_post_resume(struct hid_device *hdev)
 {
 	return rmi_set_mode(hdev, RMI_MODE_ATTN_REPORTS);
 }
+#endif /* CONFIG_PM */
 
 #define RMI4_MAX_PAGE 0xff
 #define RMI4_PAGE_SIZE 0x0100
@@ -549,9 +551,15 @@ static int rmi_populate_f11(struct hid_device *hdev)
 	struct rmi_data *data = hid_get_drvdata(hdev);
 	u8 buf[20];
 	int ret;
+	bool has_query9;
+	bool has_query10 = false;
+	bool has_query11;
 	bool has_query12;
 	bool has_physical_props;
+	bool has_gestures;
+	bool has_rel;
 	unsigned x_size, y_size;
+	u16 query12_offset;
 
 	if (!data->f11.query_base_addr) {
 		hid_err(hdev, "No 2D sensor found, giving up.\n");
@@ -564,6 +572,8 @@ static int rmi_populate_f11(struct hid_device *hdev)
 		hid_err(hdev, "can not get query 0: %d.\n", ret);
 		return ret;
 	}
+	has_query9 = !!(buf[0] & BIT(3));
+	has_query11 = !!(buf[0] & BIT(4));
 	has_query12 = !!(buf[0] & BIT(5));
 
 	/* query 1 to get the max number of fingers */
@@ -584,12 +594,46 @@ static int rmi_populate_f11(struct hid_device *hdev)
 		return -ENODEV;
 	}
 
+	has_rel = !!(buf[0] & BIT(3));
+	has_gestures = !!(buf[0] & BIT(5));
+
+	if (has_gestures) {
+		/* query 8 to find out if query 10 exists */
+		ret = rmi_read(hdev, data->f11.query_base_addr + 8, buf);
+		if (ret) {
+			hid_err(hdev, "can not read gesture information: %d.\n",
+				ret);
+			return ret;
+		}
+		has_query10 = !!(buf[0] & BIT(2));
+	}
+
 	/*
-	 * query 12 to know if the physical properties are reported
-	 * (query 12 is at offset 10 for HID devices)
+	 * At least 4 queries are guaranteed to be present in F11
+	 * +1 for query 5 which is present since absolute events are
+	 * reported and +1 for query 12.
 	 */
+	query12_offset = 6;
+
+	if (has_rel)
+		++query12_offset; /* query 6 is present */
+
+	if (has_gestures)
+		query12_offset += 2; /* query 7 and 8 are present */
+
+	if (has_query9)
+		++query12_offset;
+
+	if (has_query10)
+		++query12_offset;
+
+	if (has_query11)
+		++query12_offset;
+
+	/* query 12 to know if the physical properties are reported */
 	if (has_query12) {
-		ret = rmi_read(hdev, data->f11.query_base_addr + 10, buf);
+		ret = rmi_read(hdev, data->f11.query_base_addr
+				+ query12_offset, buf);
 		if (ret) {
 			hid_err(hdev, "can not get query 12: %d.\n", ret);
 			return ret;
@@ -598,7 +642,8 @@ static int rmi_populate_f11(struct hid_device *hdev)
 
 		if (has_physical_props) {
 			ret = rmi_read_block(hdev,
-					data->f11.query_base_addr + 11, buf, 4);
+					data->f11.query_base_addr
+						+ query12_offset + 1, buf, 4);
 			if (ret) {
 				hid_err(hdev, "can not read query 15-18: %d.\n",
 					ret);
@@ -762,9 +807,9 @@ static void rmi_input_configured(struct hid_device *hdev, struct hid_input *hi)
 	input_set_abs_params(input, ABS_MT_POSITION_X, 1, data->max_x, 0, 0);
 	input_set_abs_params(input, ABS_MT_POSITION_Y, 1, data->max_y, 0, 0);
 
-	if (data->x_size_mm && data->x_size_mm) {
+	if (data->x_size_mm && data->y_size_mm) {
 		res_x = (data->max_x - 1) / data->x_size_mm;
-		res_y = (data->max_y - 1) / data->x_size_mm;
+		res_y = (data->max_y - 1) / data->y_size_mm;
 
 		input_abs_set_res(input, ABS_MT_POSITION_X, res_x);
 		input_abs_set_res(input, ABS_MT_POSITION_Y, res_y);
@@ -806,6 +851,8 @@ static int rmi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	struct rmi_data *data = NULL;
 	int ret;
 	size_t alloc_size;
+	struct hid_report *input_report;
+	struct hid_report *output_report;
 
 	data = devm_kzalloc(&hdev->dev, sizeof(struct rmi_data), GFP_KERNEL);
 	if (!data)
@@ -824,12 +871,26 @@ static int rmi_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		return ret;
 	}
 
-	data->input_report_size = (hdev->report_enum[HID_INPUT_REPORT]
-		.report_id_hash[RMI_ATTN_REPORT_ID]->size >> 3)
-		+ 1 /* report id */;
-	data->output_report_size = (hdev->report_enum[HID_OUTPUT_REPORT]
-		.report_id_hash[RMI_WRITE_REPORT_ID]->size >> 3)
-		+ 1 /* report id */;
+	input_report = hdev->report_enum[HID_INPUT_REPORT]
+			.report_id_hash[RMI_ATTN_REPORT_ID];
+	if (!input_report) {
+		hid_err(hdev, "device does not have expected input report\n");
+		ret = -ENODEV;
+		return ret;
+	}
+
+	data->input_report_size = (input_report->size >> 3) + 1 /* report id */;
+
+	output_report = hdev->report_enum[HID_OUTPUT_REPORT]
+			.report_id_hash[RMI_WRITE_REPORT_ID];
+	if (!output_report) {
+		hid_err(hdev, "device does not have expected output report\n");
+		ret = -ENODEV;
+		return ret;
+	}
+
+	data->output_report_size = (output_report->size >> 3)
+					+ 1 /* report id */;
 
 	alloc_size = data->output_report_size + data->input_report_size;
 
