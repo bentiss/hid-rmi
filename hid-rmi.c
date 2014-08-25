@@ -37,7 +37,7 @@
 #define RMI_STARTED			BIT(2)
 
 enum rmi_mode_type {
-	RMI_MODE_OFF 			= 0,
+	RMI_MODE_OFF			= 0,
 	RMI_MODE_ATTN_REPORTS		= 1,
 	RMI_MODE_NO_PACKED_ATTN_REPORTS	= 2,
 };
@@ -179,7 +179,7 @@ static int rmi_set_mode(struct hid_device *hdev, u8 mode)
 	return 0;
 }
 
-static int rmi_write_report(struct hid_device *hdev, u8 * report, int len)
+static int rmi_write_report(struct hid_device *hdev, u8 *report, int len)
 {
 	int ret;
 
@@ -233,7 +233,7 @@ static int rmi_read_block(struct hid_device *hdev, u16 addr, void *buf,
 		bytes_read = 0;
 		bytes_needed = len;
 		while (bytes_read < len) {
-			if (!wait_event_timeout(data->wait, 
+			if (!wait_event_timeout(data->wait,
 				test_bit(RMI_READ_DATA_PENDING, &data->flags),
 					msecs_to_jiffies(1000))) {
 				hid_warn(hdev, "%s: timeout elapsed\n",
@@ -356,7 +356,7 @@ static int rmi_f30_input_event(struct hid_device *hdev, u8 irq, u8 *data,
 		return 0;
 
 	for (i = 0; i < hdata->gpio_led_count; i++) {
-		if (test_bit(i, &hdata->button_mask)){
+		if (test_bit(i, &hdata->button_mask)) {
 			value = (data[i / 8] >> (i & 0x07)) & BIT(0);
 			if (test_bit(i, &hdata->button_state_mask))
 				value = !value;
@@ -616,10 +616,15 @@ static int rmi_populate_f11(struct hid_device *hdev)
 		}
 	}
 
-	/* retrieve the ctrl registers */
-	ret = rmi_read_block(hdev, data->f11.control_base_addr, buf, 20);
+	/*
+	 * retrieve the ctrl registers
+	 * the ctrl register has a size of 20 but a fw bug split it into 16 + 4,
+	 * and there is no way to know if the first 20 bytes are here or not.
+	 * We use only the first 10 bytes, so get only them.
+	 */
+	ret = rmi_read_block(hdev, data->f11.control_base_addr, buf, 10);
 	if (ret) {
-		hid_err(hdev, "can not read ctrl block of size 20: %d.\n", ret);
+		hid_err(hdev, "can not read ctrl block of size 10: %d.\n", ret);
 		return ret;
 	}
 
@@ -864,8 +869,10 @@ static void rmi_remove(struct hid_device *hdev)
 }
 
 static const struct hid_device_id rmi_id[] = {
-	{ HID_I2C_DEVICE(USB_VENDOR_ID_SYNAPTICS, HID_ANY_ID) },
-	{ HID_USB_DEVICE(USB_VENDOR_ID_SYNAPTICS, HID_ANY_ID) },
+	{ HID_DEVICE(BUS_I2C, HID_GROUP_HAVE_SPECIAL_DRIVER,
+		USB_VENDOR_ID_SYNAPTICS, HID_ANY_ID) },
+	{ HID_DEVICE(BUS_USB, HID_GROUP_HAVE_SPECIAL_DRIVER,
+		USB_VENDOR_ID_SYNAPTICS, HID_ANY_ID) },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, rmi_id);
